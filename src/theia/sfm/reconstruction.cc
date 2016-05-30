@@ -313,6 +313,14 @@ std::vector<TrackId> Reconstruction::TrackIds() const {
 }
 
 void Reconstruction::Normalize() {
+  Eigen::Vector3d export_median;
+  double export_scale; //todo ask about init
+  Eigen::Matrix3d export_rotation_for_dominant_plane;
+  this->Normalize(export_median, export_scale, export_rotation_for_dominant_plane);
+}
+
+void Reconstruction::Normalize(Eigen::Vector3d &export_median, double &export_scale,
+                               Eigen::Matrix3d &export_rotation) {
   // Get the estimated track ids.
   const auto& temp_track_ids = TrackIds();
   std::vector<TrackId> track_ids;
@@ -345,6 +353,7 @@ void Reconstruction::Normalize() {
 
   // Apply position transformation.
   TransformReconstruction(Eigen::Matrix3d::Identity(), -median, 1.0, this);
+  export_median = median;
 
   // Find the median absolute deviation of the points from the median.
   std::vector<double> distance_to_median;
@@ -362,6 +371,7 @@ void Reconstruction::Normalize() {
                           Eigen::Vector3d::Zero(),
                           scale,
                           this);
+  export_scale = scale;
 
   // Compute a rotation such that the x-z plane is aligned to the dominating
   // plane of the cameras.
@@ -411,6 +421,24 @@ void Reconstruction::Normalize() {
   }
 
   TransformReconstruction(rotation_for_dominant_plane,
+                          Eigen::Vector3d::Zero(),
+                          1.0,
+                          this);
+  export_rotation = rotation_for_dominant_plane;
+}
+
+void Reconstruction::TransformToForeign(Eigen::Vector3d &export_median,
+                                        double &export_scale,
+                                        Eigen::Matrix3d &export_rotation) {
+  TransformReconstruction(Eigen::Matrix3d::Identity(),
+                          -export_median,
+                          1.0,
+                          this);
+  TransformReconstruction(Eigen::Matrix3d::Identity(),
+                          Eigen::Vector3d::Zero(),
+                          export_scale,
+                          this);
+  TransformReconstruction(export_rotation,
                           Eigen::Vector3d::Zero(),
                           1.0,
                           this);

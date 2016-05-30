@@ -128,6 +128,10 @@ class Reconstruction {
   // NOTE: This implementation is inspired by the BAL problem normalization in
   // Ceres Solver.
   void Normalize();
+  void Normalize(Eigen::Vector3d &export_median, double &export_scale,
+                 Eigen::Matrix3d &export_rotation);
+  void TransformToForeign(Eigen::Vector3d &export_median, double &export_scale,
+                 Eigen::Matrix3d &export_rotation);
 
  private:
   // Templated method for disk I/O with cereal. This method tells cereal which

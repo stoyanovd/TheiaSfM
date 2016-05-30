@@ -59,13 +59,22 @@
 #endif  // _WIN32
 #endif  // __APPLE__
 
-DEFINE_string(reconstruction, "", "Reconstruction file to be viewed.");
+DEFINE_string(reconstruction,
+              "",
+              "Reconstruction file to be viewed. If wildcard, you can move with n/N.");
 
 // Containers for the data.
 std::vector<theia::Camera> cameras;
 std::vector<Eigen::Vector3d> world_points;
 std::vector<Eigen::Vector3f> point_colors;
 std::vector<int> num_views_for_track;
+
+Eigen::Vector3d export_median;
+double export_scale;
+Eigen::Matrix3d export_rotation_for_dominant_plane;
+
+std::vector<std::string> filepaths;
+int file_index = 0;
 
 // Parameters for OpenGL.
 int width = 1200;
@@ -356,6 +365,54 @@ void MouseMove(int x, int y) {
   }
 }
 
+void AddReconstructionToVisualization(bool first_time) {
+  // Output as a binary file.
+  std::unique_ptr<theia::Reconstruction> reconstruction(
+      new theia::Reconstruction());
+  CHECK(ReadReconstruction(filepaths[file_index], reconstruction.get()))
+  << "Could not read reconstruction file: "<< filepaths[file_index];
+
+  // Centers the reconstruction either based on the absolute deviation
+  // of its 3D points or similar to previous reconstruction.
+  if (first_time) {
+    reconstruction->Normalize(export_median,
+                              export_scale,
+                              export_rotation_for_dominant_plane);
+  }
+  else {
+    reconstruction->TransformToForeign(export_median,
+                                       export_scale,
+                                       export_rotation_for_dominant_plane);
+  }
+  cameras.clear();
+  // Set up camera drawing.
+  cameras.reserve(reconstruction->NumViews());
+  for (const theia::ViewId view_id : reconstruction->ViewIds()) {
+    const auto* view = reconstruction->View(view_id);
+    if (view == nullptr || !view->IsEstimated()) {
+      continue;
+    }
+    cameras.emplace_back(view->Camera());
+  }
+
+  world_points.clear();
+  point_colors.clear();
+  // Set up world points and colors.
+  world_points.reserve(reconstruction->NumTracks());
+  point_colors.reserve(reconstruction->NumTracks());
+  for (const theia::TrackId track_id : reconstruction->TrackIds()) {
+    const auto* track = reconstruction->Track(track_id);
+    if (track == nullptr || !track->IsEstimated()) {
+      continue;
+    }
+    world_points.emplace_back(track->Point().hnormalized());
+    point_colors.emplace_back(track->Color().cast<float>());
+    num_views_for_track.emplace_back(track->NumViews());
+  }
+
+  reconstruction.release();
+}
+
 void Keyboard(unsigned char key, int x, int y) {
   switch (key) {
     case 'r':  // reset viewpoint
@@ -410,46 +467,27 @@ void Keyboard(unsigned char key, int x, int y) {
         anti_aliasing_blend += 0.01;
       }
       break;
+    case 'n':
+      file_index = std::min(file_index + 1, (int)filepaths.size() - 1);
+      AddReconstructionToVisualization(false);
+      break;
+    case 'N':
+      file_index = std::max(file_index - 1, 0);
+      AddReconstructionToVisualization(false);
+      break;
   }
 }
-
 int main(int argc, char* argv[]) {
   THEIA_GFLAGS_NAMESPACE::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
 
-  // Output as a binary file.
-  std::unique_ptr<theia::Reconstruction> reconstruction(
-      new theia::Reconstruction());
-  CHECK(ReadReconstruction(FLAGS_reconstruction, reconstruction.get()))
-      << "Could not read reconstruction file.";
+  theia::GetFilepathsFromWildcard(FLAGS_reconstruction, &filepaths);
 
-  // Centers the reconstruction based on the absolute deviation of 3D points.
-  reconstruction->Normalize();
+  //TODO(stoyanovd): Think about natural order of filepaths.
+  std::sort(filepaths.begin(), filepaths.end());
 
-  // Set up camera drawing.
-  cameras.reserve(reconstruction->NumViews());
-  for (const theia::ViewId view_id : reconstruction->ViewIds()) {
-    const auto* view = reconstruction->View(view_id);
-    if (view == nullptr || !view->IsEstimated()) {
-      continue;
-    }
-    cameras.emplace_back(view->Camera());
-  }
-
-  // Set up world points and colors.
-  world_points.reserve(reconstruction->NumTracks());
-  point_colors.reserve(reconstruction->NumTracks());
-  for (const theia::TrackId track_id : reconstruction->TrackIds()) {
-    const auto* track = reconstruction->Track(track_id);
-    if (track == nullptr || !track->IsEstimated()) {
-      continue;
-    }
-    world_points.emplace_back(track->Point().hnormalized());
-    point_colors.emplace_back(track->Color().cast<float>());
-    num_views_for_track.emplace_back(track->NumViews());
-  }
-
-  reconstruction.release();
+  // At first time we must fill transformation parameteres.
+  AddReconstructionToVisualization(true);
 
   // Set up opengl and glut.
   glutInit(&argc, argv);

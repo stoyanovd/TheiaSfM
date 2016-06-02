@@ -365,6 +365,11 @@ void MouseMove(int x, int y) {
   }
 }
 
+void ChangeWindowsTitle() {
+  glutSetWindowTitle(("Theia Reconstruction Viewer: "
+      + filepaths[file_index]).c_str());
+}
+
 void AddReconstructionToVisualization(bool first_time) {
   // Output as a binary file.
   std::unique_ptr<theia::Reconstruction> reconstruction(
@@ -397,9 +402,11 @@ void AddReconstructionToVisualization(bool first_time) {
 
   world_points.clear();
   point_colors.clear();
+  num_views_for_track.clear();
   // Set up world points and colors.
   world_points.reserve(reconstruction->NumTracks());
   point_colors.reserve(reconstruction->NumTracks());
+  num_views_for_track.reserve(reconstruction->NumTracks());
   for (const theia::TrackId track_id : reconstruction->TrackIds()) {
     const auto* track = reconstruction->Track(track_id);
     if (track == nullptr || !track->IsEstimated()) {
@@ -409,8 +416,9 @@ void AddReconstructionToVisualization(bool first_time) {
     point_colors.emplace_back(track->Color().cast<float>());
     num_views_for_track.emplace_back(track->NumViews());
   }
-
   reconstruction.release();
+  if (!first_time)
+    ChangeWindowsTitle();
 }
 
 void Keyboard(unsigned char key, int x, int y) {
@@ -495,6 +503,7 @@ int main(int argc, char* argv[]) {
   glutInitWindowSize(1200, 800);
   glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
   glutCreateWindow("Theia Reconstruction Viewer");
+  ChangeWindowsTitle();
 
   // Set the camera
   gluLookAt(0.0f, 0.0f, -6.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);

@@ -69,9 +69,13 @@ struct ReconstructionBuilderOptions {
   // added to the reconstruction builder they are ignored with a LOG warning.
   bool only_calibrated_views = false;
 
+  // Minimum allowable track length. Tracks that are too short are often not
+  // well-constrained for triangulation and bundle adjustment.
+  int min_track_length = 2;
+
   // Maximum allowable track length. Tracks that are too long are exceedingly
   // likely to contain outliers.
-  int max_track_length = 20;
+  int max_track_length = 50;
 
   // Minimum number of geometrically verified inliers that a view pair must have
   // in order to be considered a good match.
@@ -81,9 +85,10 @@ struct ReconstructionBuilderOptions {
   // See //theia/image/descriptor/create_descriptor_extractor.h
   DescriptorExtractorType descriptor_type = DescriptorExtractorType::SIFT;
 
-  // Sift parameters controlling keypoint detection and description options.
-  // See //theia/image/keypoint_detector/sift_parameters.h
-  SiftParameters sift_parameters;
+  // The density of features to extract. DENSE means more features are
+  // extracted per image and SPARSE means fewer features per image are
+  // extracted.
+  FeatureDensity feature_density = FeatureDensity::NORMAL;
 
   // Matching strategy type.
   // See //theia/matching/create_feature_matcher.h

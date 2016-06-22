@@ -93,6 +93,9 @@ class ThreadPool {
   auto Add(F&& f, Args&& ... args)
       ->std::future<typename std::result_of<F(Args...)>::type>;
 
+  // Waits for all current tasks/threads to finish.
+  void WaitForTasksToFinish();
+
  private:
   // Keep track of threads so we can join them
   std::vector<std::thread> workers;
@@ -101,7 +104,8 @@ class ThreadPool {
 
   // Synchronization
   std::mutex queue_mutex;
-  std::condition_variable condition;
+  std::condition_variable task_condition, finished_condition;
+  std::atomic_uint busy;
   bool stop;
 
   DISALLOW_COPY_AND_ASSIGN(ThreadPool);
@@ -128,7 +132,7 @@ auto ThreadPool::Add(F&& f, Args&& ... args)
       (*task)();
     });
   }
-  condition.notify_one();
+  task_condition.notify_one();
   return res;
 }
 

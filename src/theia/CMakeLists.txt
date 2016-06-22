@@ -37,6 +37,7 @@ file(GLOB THEIA_HDRS *.h)
 
 # Add sources
 set(THEIA_SRC
+  image/descriptor/akaze_descriptor.cc
   image/descriptor/create_descriptor_extractor.cc
   image/descriptor/descriptor_extractor.cc
   image/descriptor/sift_descriptor.cc
@@ -48,17 +49,13 @@ set(THEIA_SRC
   io/read_calibration.cc
   io/read_keypoints_and_descriptors.cc
   io/read_matches.cc
-  io/read_matches_deprecated.cc
   io/reconstruction_reader.cc
-  io/reconstruction_reader_deprecated.cc
   io/reconstruction_writer.cc
-  io/reconstruction_writer_deprecated.cc
   io/sift_binary_file.cc
   io/sift_text_file.cc
   io/write_bundler_files.cc
   io/write_keypoints_and_descriptors.cc
   io/write_matches.cc
-  io/write_matches_deprecated.cc
   io/write_nvm_file.cc
   io/write_ply_file.cc
   matching/brute_force_feature_matcher.cc
@@ -67,6 +64,7 @@ set(THEIA_SRC
   matching/create_feature_matcher.cc
   matching/feature_matcher.cc
   matching/feature_matcher_utils.cc
+  matching/guided_epipolar_matcher.cc
   math/closed_form_polynomial_solver.cc
   math/find_polynomial_roots_companion_matrix.cc
   math/find_polynomial_roots_jenkins_traub.cc
@@ -167,7 +165,9 @@ set(THEIA_LIBRARY_DEPENDENCIES
   ${GLOG_LIBRARIES}
   ${CIMG_LIBRARIES}
   ${SUITESPARSE_LIBRARIES}
+  akaze
   easyexif
+  flann_cpp
   statx
   stlplus3
   vlfeat
@@ -204,13 +204,16 @@ if (BUILD_TESTING)
       COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TEST_NAME}_test)
   endmacro (GTEST)
 
+  gtest(image/descriptor/akaze_descriptor)
   gtest(image/descriptor/sift_descriptor)
   gtest(image/image)
   gtest(image/keypoint_detector/sift_detector)
   gtest(matching/brute_force_feature_matcher)
   gtest(matching/cascade_hashing_feature_matcher)
   gtest(matching/distance)
+  gtest(matching/feature_correspondence)
   gtest(matching/feature_matcher_utils)
+  gtest(matching/guided_epipolar_matcher)
   gtest(math/closed_form_polynomial_solver)
   gtest(math/find_polynomial_roots_companion_matrix)
   gtest(math/find_polynomial_roots_jenkins_traub)
@@ -253,6 +256,7 @@ if (BUILD_TESTING)
   gtest(sfm/global_pose_estimation/pairwise_translation_and_scale_error)
   gtest(sfm/global_pose_estimation/pairwise_translation_error)
   gtest(sfm/global_pose_estimation/robust_rotation_estimator)
+  gtest(sfm/incremental_reconstruction_estimator)
   gtest(sfm/pose/dls_pnp)
   gtest(sfm/pose/eight_point_fundamental_matrix)
   gtest(sfm/pose/essential_matrix_utils)

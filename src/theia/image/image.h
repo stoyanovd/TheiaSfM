@@ -83,6 +83,8 @@ template <typename T> class Image {
   // the color channel.
   T& operator()(const int x, const int y, const int c = 0);
   const T& operator()(const int x, const int y, const int c = 0) const;
+  T& AtRowCol(const int row, const int col, const int channel = 0);
+  const T& AtRowCol(const int row, const int col, const int channel = 0) const;
 
   T BilinearInterpolate(const double x, const double y, const int c = 0) const;
 
@@ -99,6 +101,10 @@ template <typename T> class Image {
   // Get a pointer to the data.
   T* Data() { return image_.data(); }
   const T* Data() const { return image_.data(); }
+
+  // Computes the gradient in x and y and returns the summation to obtain the
+  // gradient magnitude at each pixel.
+  Image<T> ComputeGradient() const;
 
   // Sampling techniques.
   void HalfSample(Image<T>* dest) const;
@@ -185,6 +191,18 @@ const T& Image<T>::operator()(const int x, const int y, const int c) const {
 }
 
 template <typename T>
+T& Image<T>::AtRowCol(const int row, const int col, const int channel) {
+  return image_(col, row, channel);
+}
+
+template <typename T>
+const T& Image<T>::AtRowCol(const int row,
+                            const int col,
+                            const int channel) const {
+  return image_(col, row, channel);
+}
+
+template <typename T>
 T Image<T>::BilinearInterpolate(const double x,
                                 const double y,
                                 const int c) const {
@@ -240,6 +258,12 @@ template <typename T> void Image<T>::Read(const std::string& filename) {
 
 template <typename T> void Image<T>::Write(const std::string& filename) const {
   image_.save(filename.c_str());
+}
+
+template <typename T>
+Image<T> Image<T>::ComputeGradient() const {
+  cimg_library::CImgList<T> gradient = image_.get_gradient("xy");
+  return Image<T>(gradient[0] + gradient[1]);
 }
 
 template <typename T> void Image<T>::HalfSample(Image<T>* dest) const {

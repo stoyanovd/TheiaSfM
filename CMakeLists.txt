@@ -211,11 +211,15 @@ add_subdirectory(libraries)
 include_directories(
   libraries
   libraries/spectra
+  ${akaze_SOURCE_DIR}
+  ${akaze_INCLUDE_DIR}
   ${cereal_SOURCE_DIR}
   ${cereal_SOURCE_DIR}/include
   ${cimg_SOURCE_DIR}
   ${cimg_INCLUDE_DIR}
   ${easyexif_INCLUDE_DIR}
+  ${flann_SOURCE_DIR}
+  ${flann_SOURCE_DIR}/src/cpp
   ${gtest_SOURCE_DIR}/include
   ${gtest_SOURCE_DIR}
   ${optimo_SOURCE_DIR}

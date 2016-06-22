@@ -72,13 +72,9 @@ void ExtractFeatures(
   //
   // TODO(cmsweeney): Change this so that each thread in the threadpool receives
   // exactly one object.
-  CreateDescriptorExtractorOptions descriptor_options;
-  descriptor_options.descriptor_extractor_type =
-      options.descriptor_extractor_type;
-  descriptor_options.sift_options = options.sift_parameters;
-
   std::unique_ptr<DescriptorExtractor> descriptor_extractor =
-      CreateDescriptorExtractor(descriptor_options);
+      CreateDescriptorExtractor(options.descriptor_extractor_type,
+                                options.feature_density);
 
   // Exit if the descriptor extraction fails.
   if (!descriptor_extractor->DetectAndExtractDescriptors(*image,
@@ -143,17 +139,17 @@ void FeatureExtractorAndMatcher::ExtractAndMatchFeatures(
   // For each image, process the features and add it to the matcher.
   const int num_threads =
       std::min(options_.num_threads, static_cast<int>(image_filepaths_.size()));
-  std::unique_ptr<ThreadPool> thread_pool(new ThreadPool(num_threads));
+  ThreadPool thread_pool(num_threads);
   for (int i = 0; i < image_filepaths_.size(); i++) {
     if (!FileExists(image_filepaths_[i])) {
       LOG(ERROR) << "Could not extract features for " << image_filepaths_[i]
                  << " because the file cannot be found.";
       continue;
     }
-    thread_pool->Add(&FeatureExtractorAndMatcher::ProcessImage, this, i);
+    thread_pool.Add(&FeatureExtractorAndMatcher::ProcessImage, this, i);
   }
   // This forces all tasks to complete before proceeding.
-  thread_pool.reset(nullptr);
+  thread_pool.WaitForTasksToFinish();
 
   // After all threads complete feature extraction, perform matching.
 
@@ -175,9 +171,8 @@ void FeatureExtractorAndMatcher::ProcessImage(
   if (!ContainsKey(intrinsics_, image_filepath)) {
     CameraIntrinsicsPrior intrinsics;
     CHECK(exif_reader_.ExtractEXIFMetadata(image_filepath, &intrinsics));
-    intrinsics_mutex_.lock();
+    std::lock_guard<std::mutex> lock(intrinsics_mutex_);
     intrinsics_.emplace(image_filepath, intrinsics);
-    intrinsics_mutex_.unlock();
   }
 
   // Early exit if no EXIF calibration exists and we are only processing
@@ -208,9 +203,8 @@ void FeatureExtractorAndMatcher::ProcessImage(
   // disk and read them back as needed.
   std::string image_filename;
   CHECK(GetFilenameFromFilepath(image_filepath, true, &image_filename));
-  matcher_mutex_.lock();
+  std::lock_guard<std::mutex> lock(matcher_mutex_);
   matcher_->AddImage(image_filename, keypoints, descriptors, intrinsics);
-  matcher_mutex_.unlock();
 }
 
 }  // namespace theia

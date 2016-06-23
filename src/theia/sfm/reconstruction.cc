@@ -77,6 +77,19 @@ double Median(std::vector<double>* data) {
   return *mid_point;
 }
 
+//todo: you can optimize this (and its usage) lately
+std::string ConvertFeatureSetToString(const std::vector<std::pair<ViewId,
+                                                                  Feature>>& sorted_track) {
+
+  CHECK_GT(sorted_track.size(), 1);
+  std::stringstream sstream;
+  for (int i = 0; i < 2; i++) {
+    const auto& x = sorted_track[i];
+    sstream << x.first << "," << x.second[0] << "," << x.second[1] << ";";
+  }
+  return sstream.str();
+}
+
 }  // namespace
 
 Reconstruction::Reconstruction()
@@ -261,6 +274,38 @@ TrackId Reconstruction::AddTrack(
   return new_track_id;
 }
 
+
+void Reconstruction::UpdateTrack(TrackId track_id,
+    const std::vector<std::pair<ViewId, Feature> >& features) {
+
+  class Track *track = MutableTrack(track_id);
+  if (features.size() < 2) {
+    LOG(WARNING) << "Tracks must have at least 2 observations (" << features.size()
+        << " were given). Cannot add track to the reconstruction";
+  }
+
+  if (DuplicateViewsExistInTrack(features)) {
+    LOG(WARNING) << "Cannot add a track that contains the same view twice to "
+        "the reconstruction.";
+  }
+
+  for (const auto& observation : features) {
+    // Make sure the view exists in the model.
+    CHECK(ContainsKey(views_, observation.first))
+    << "Cannot add a track with containing an observation in view id "
+        << observation.first << " because the view does not exist.";
+
+    if(track->ViewIds().find(observation.first) != track->ViewIds().end())
+      continue;
+    // Add view to track.
+    track->AddView(observation.first);
+
+    // Add track to view.
+    class View* view = MutableView(observation.first);
+    view->AddFeature(track_id, observation.second);
+  }
+}
+
 bool Reconstruction::RemoveTrack(const TrackId track_id) {
   class Track* track = FindOrNull(tracks_, track_id);
   if (track == nullptr) {
@@ -440,6 +485,39 @@ void Reconstruction::TransformToForeign(Eigen::Vector3d &export_median,
                           Eigen::Vector3d::Zero(),
                           1.0,
                           this);
+}
+
+void Reconstruction::PutTrackToMap(TrackId trackId,
+                                   const std::vector<std::pair<ViewId,
+                                                               Feature> >& sorted_track) {
+  // TODO debug...
+  CHECK(std::is_sorted(sorted_track.begin(),
+                       sorted_track.end(),
+                       [](const std::pair<ViewId, Feature>& a,
+                          const std::pair<ViewId, Feature>& b) {
+                         return a.first < b.first;
+                       }));
+
+  std::string s = ConvertFeatureSetToString(sorted_track);
+  InsertOrDie(&feature_set_to_track_, s, trackId);
+  InsertOrDie(&track_to_feature_set, trackId, s);
+}
+
+TrackId Reconstruction::FindTrackInMap(const std::vector<std::pair<ViewId,
+                                                                   Feature> >& sorted_track) {
+  // TODO debug...
+  CHECK(std::is_sorted(sorted_track.begin(),
+                       sorted_track.end(),
+                       [](const std::pair<ViewId, Feature>& a,
+                          const std::pair<ViewId, Feature>& b) {
+                         return a.first < b.first;
+                       }));
+
+  std::string s = ConvertFeatureSetToString(sorted_track);
+  TrackId* trackId = FindOrNull(feature_set_to_track_, s);
+  if (!trackId)
+    return kInvalidTrackId;
+  else return *trackId;
 }
 
 }  // namespace theia

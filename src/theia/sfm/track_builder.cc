@@ -119,8 +119,17 @@ void TrackBuilder::BuildTracks(Reconstruction* reconstruction) {
       track.emplace_back(feature_to_add);
     }
 
-    CHECK_NE(reconstruction->AddTrack(track), kInvalidTrackId)
-        << "Could not build tracks.";
+    std::sort(track.begin(),
+              track.end(),
+              [](const std::pair<ViewId, Feature>& a,
+                 const std::pair<ViewId, Feature>& b) {
+                return a.first < b.first;
+              });
+
+    TrackId added_track_id = reconstruction->AddTrack(track);
+    CHECK_NE(added_track_id, kInvalidTrackId)
+      << "Could not build tracks.";
+    reconstruction->PutTrackToMap(added_track_id, track);
   }
 
   VLOG(1)
@@ -129,6 +138,96 @@ void TrackBuilder::BuildTracks(Reconstruction* reconstruction) {
       << " features were dropped because they formed inconsistent tracks, and "
       << num_small_tracks << " features were dropped because they did not have "
                              "enough observations.";
+}
+
+void TrackBuilder::AddNewTracks(Reconstruction* reconstruction, ViewId last_view_id) {
+  CHECK_NOTNULL(reconstruction);
+//  CHECK_EQ(reconstruction->NumTracks(), 0);
+
+
+  // Build a reverse map mapping feature ids to ImageNameFeaturePairs.
+  std::unordered_map<uint64_t, const std::pair<ViewId, Feature>*> id_to_feature;
+  id_to_feature.reserve(features_.size());
+  for (const auto& feature : features_) {
+    InsertOrDie(&id_to_feature, feature.second, &feature.first);
+  }
+
+  // Extract all connected components.
+  std::unordered_map<uint64_t, std::unordered_set<uint64_t> > components;
+  connected_components_->Extract(&components);
+
+  // Each connected component is a track. Add all tracks to the reconstruction.
+  int num_small_tracks = 0;
+  int num_inconsistent_features = 0;
+  int num_new_tracks = 0;
+  int num_updated_tracks = 0;
+  int num_without_last = 0;
+  for (const auto& component : components) {
+    // Skip singleton tracks.
+    if (component.second.size() < min_track_length_) {
+      ++num_small_tracks;
+      continue;
+    }
+
+    std::vector<std::pair<ViewId, Feature> > track;
+    track.reserve(component.second.size());
+
+    bool has_last_view_id = false;
+    // Add all features in the connected component to the track.
+    std::unordered_set<ViewId> view_ids;
+    for (const auto& feature_id : component.second) {
+      const auto& feature_to_add = *FindOrDie(id_to_feature, feature_id);
+
+      // Do not add the feature if the track already contains a feature from the
+      // same image.
+      if (!InsertIfNotPresent(&view_ids, feature_to_add.first)) {
+        ++num_inconsistent_features;
+        continue;
+      }
+      has_last_view_id |= feature_to_add.first == last_view_id;
+      track.emplace_back(feature_to_add);
+    }
+
+    if (!has_last_view_id)
+    {
+      num_without_last++;
+//      continue;
+    }
+
+    std::sort(track.begin(),
+              track.end(),
+              [](const std::pair<ViewId, Feature>& a,
+                 const std::pair<ViewId, Feature>& b) {
+                return a.first < b.first;
+              });
+    // out;ier
+
+    TrackId already_track_id = reconstruction->FindTrackInMap(track);
+
+    if (already_track_id == kInvalidTrackId) {
+      TrackId added_track_id = reconstruction->AddTrack(track);
+      CHECK_NE(added_track_id, kInvalidTrackId)
+        << "Could not build tracks.";
+      reconstruction->PutTrackToMap(added_track_id, track);
+      num_new_tracks++;
+    }
+    else {
+      reconstruction->UpdateTrack(already_track_id, track);
+      num_updated_tracks++;
+    }
+  }
+
+  VLOG(1)
+  << reconstruction->NumTracks() << " totally in reconstruction. "
+      << num_inconsistent_features
+      << " features were dropped because they formed inconsistent tracks, and "
+      << num_small_tracks << " features were dropped because they did not have "
+      "enough observations.";
+  VLOG(1) << "Totally " << num_new_tracks + num_updated_tracks << " with view "
+      << last_view_id << " was processed.";
+  VLOG(1)
+  << "New: " << num_new_tracks << ". Updated: " << num_updated_tracks << ".";
+  VLOG(1) << "Tracks without last: " << num_without_last;
 }
 
 uint64_t TrackBuilder::FindOrInsert(

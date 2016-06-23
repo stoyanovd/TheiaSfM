@@ -73,6 +73,8 @@ class Track {
 
   const std::unordered_set<ViewId>& ViewIds() const;
 
+  std::string features_at_start_;
+
  private:
   // Templated method for disk I/O with cereal. This method tells cereal which
   // data members should be used when reading/writing to/from disk.

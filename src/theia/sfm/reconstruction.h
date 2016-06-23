@@ -109,6 +109,10 @@ class Reconstruction {
   // present, and kInvalidTrackId is returned.
   TrackId AddTrack(const std::vector<std::pair<ViewId, Feature> >& track);
 
+
+  void UpdateTrack(TrackId track_id,
+                                      const std::vector<std::pair<ViewId,
+                                                                  Feature> >& features);
   // Removes the track from the reconstruction including the corresponding
   // features that are present in the view that observe it.
   bool RemoveTrack(const TrackId track_id);
@@ -133,7 +137,12 @@ class Reconstruction {
   void Normalize(Eigen::Vector3d &export_median, double &export_scale,
                  Eigen::Matrix3d &export_rotation);
   void TransformToForeign(Eigen::Vector3d &export_median, double &export_scale,
-                 Eigen::Matrix3d &export_rotation);
+                          Eigen::Matrix3d& export_rotation);
+  void PutTrackToMap(TrackId trackId,
+                     const std::vector<std::pair<ViewId,
+                                                 Feature> >& sorted_track);
+  TrackId FindTrackInMap
+      (const std::vector<std::pair<ViewId, Feature> >& sorted_track);
 
  private:
   // Templated method for disk I/O with cereal. This method tells cereal which
@@ -162,6 +171,10 @@ class Reconstruction {
       view_id_to_camera_intrinsics_group_id_;
   std::unordered_map<CameraIntrinsicsGroupId, std::unordered_set<ViewId> >
       camera_intrinsics_groups_;
+
+  std::unordered_map<std::string, TrackId> feature_set_to_track_;
+  std::unordered_map<TrackId, std::string> track_to_feature_set;
+  std::unordered_set<std::string> outlier_feature_sets_;
 };
 
 }  // namespace theia

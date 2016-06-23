@@ -332,8 +332,10 @@ bool ReconstructionBuilder::BuildReconstruction(
   // Build tracks if they were not explicitly specified.
   if (reconstruction_->NumTracks() == 0) {
     track_builder_->BuildTracks(reconstruction_.get());
+  } else {
+    track_builder_->AddNewTracks(reconstruction_.get(),
+                                 reconstruction_.get()->ViewIds().back());
   }
-
   // Remove uncalibrated views from the reconstruction and view graph.
   if (options_.only_calibrated_views) {
     LOG(INFO) << "Removing uncalibrated views.";
@@ -373,7 +375,8 @@ bool ReconstructionBuilder::BuildReconstruction(
     // from the remaining unestimated parts.
     reconstructions->emplace_back(
         CreateEstimatedSubreconstruction(*reconstruction_));
-    RemoveEstimatedViewsAndTracks(reconstruction_.get(), view_graph_.get());
+//    RemoveEstimatedViewsAndTracks(reconstruction_.get(), view_graph_.get());
+    return true;
 
     // Exit after the first reconstruction estimation if only the single largest
     // reconstruction is desired.

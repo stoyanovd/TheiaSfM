@@ -32,33 +32,57 @@
 // Please contact the author of this library if you have any questions.
 // Author: Chris Sweeney (cmsweeney@cs.ucsb.edu)
 
+#include "theia/sfm/stream_reconstruction_estimator_utils.h"
+
+#include <ceres/rotation.h>
+#include <Eigen/Core>
+#include <Eigen/LU>
+
+#include <algorithm>
+#include <unordered_map>
+#include <vector>
+
+#include "theia/matching/feature_correspondence.h"
+#include "theia/sfm/bundle_adjustment/bundle_adjustment.h"
+#include "theia/sfm/bundle_adjustment/optimize_relative_position_with_known_rotation.h"
+#include "theia/sfm/camera/reprojection_error.h"
+#include "theia/sfm/global_pose_estimation/nonlinear_position_estimator.h"
+#include "theia/sfm/reconstruction.h"
 #include "theia/sfm/reconstruction_estimator.h"
-
-#include <glog/logging.h>
-
-#include "theia/sfm/incremental_reconstruction_estimator.h"
-#include "theia/sfm/global_reconstruction_estimator.h"
-#include "theia/sfm/stream_reconstruction_estimator.h"
-#include "theia/sfm/reconstruction_estimator_options.h"
+#include "theia/sfm/triangulation/triangulation.h"
+#include "theia/sfm/twoview_info.h"
+#include "theia/sfm/view_graph/view_graph.h"
+#include "theia/solvers/sample_consensus_estimator.h"
+#include "theia/util/map_util.h"
+#include "theia/util/threadpool.h"
 
 namespace theia {
 
-ReconstructionEstimator* ReconstructionEstimator::Create(
-    const ReconstructionEstimatorOptions& options) {
-  switch (options.reconstruction_estimator_type) {
-    case ReconstructionEstimatorType::GLOBAL:
-      return new GlobalReconstructionEstimator(options);
-      break;
-    case ReconstructionEstimatorType::INCREMENTAL:
-      return new IncrementalReconstructionEstimator(options);
-      break;
-    case ReconstructionEstimatorType::STREAM:
-      return new StreamReconstructionEstimator(options);
-      break;
-    default:
-      LOG(FATAL) << "Invalid reconstruction estimator specified.";
+std::tuple<int, int, int> NumTracksLargeDiff(
+    const Reconstruction& reconstruction, ViewId start_view_id, int diff_ids) {
+  int num_total = 0;
+  int num_large_diff = 0;
+  int num_large_diff_est = 0;
+  for (const theia::TrackId track_id : reconstruction.TrackIds()) {
+    const auto* track = reconstruction.Track(track_id);
+    if (track == nullptr) {
+      continue;
+    }
+    auto leader_view_ids = track->ViewIds();
+    theia::ViewId min_view_id =
+        *std::min_element(leader_view_ids.begin(), leader_view_ids.end());
+    theia::ViewId max_view_id =
+        *std::max_element(leader_view_ids.begin(), leader_view_ids.end());
+
+    if (max_view_id > start_view_id) {
+      num_total++;
+      num_large_diff += (max_view_id - min_view_id > diff_ids);
+      num_large_diff_est +=
+          (max_view_id - min_view_id > diff_ids) && track->IsEstimated();
+    }
   }
-  return nullptr;
+
+  return std::make_tuple(num_total, num_large_diff, num_large_diff_est);
 }
 
 }  // namespace theia

@@ -97,13 +97,14 @@ DEFINE_bool(keep_only_symmetric_matches, true,
             "Performs two-way matching and keeps symmetric matches.");
 
 // Reconstruction building options.
-DEFINE_string(reconstruction_estimator, "GLOBAL",
-              "Type of SfM reconstruction estimation to use.");
+DEFINE_string(reconstruction_estimator, "STREAM",
+              "Type of SfM reconstruction estimation to use."
+              "Stream is very similiar to Incremental.");
 DEFINE_bool(reconstruct_largest_connected_component, false,
             "If set to true, only the single largest connected component is "
             "reconstructed. Otherwise, as many models as possible are "
             "estimated.");
-DEFINE_bool(shared_calibration, false,
+DEFINE_bool(shared_calibration, true,
             "Set to true if all camera intrinsic parameters should be shared "
             "as a single set of intrinsics. This is useful, for instance, if "
             "all images in the reconstruction were taken with the same "
@@ -113,8 +114,7 @@ DEFINE_bool(only_calibrated_views, false,
             "provided or can be extracted from EXIF");
 DEFINE_int32(min_track_length, 2, "Minimum length of a track.");
 DEFINE_int32(max_track_length, 50, "Maximum length of a track.");
-DEFINE_string(intrinsics_to_optimize,
-              "NONE",
+DEFINE_string(intrinsics_to_optimize, "NONE",
               "Set to control which intrinsics parameters are optimized during "
               "bundle adjustment.");
 DEFINE_double(max_reprojection_error_pixels, 4.0,
@@ -234,7 +234,7 @@ ReconstructionBuilderOptions SetReconstructionBuilderOptions() {
       FLAGS_min_num_inliers_for_valid_match;
   reconstruction_estimator_options.num_threads = FLAGS_num_threads;
   reconstruction_estimator_options.intrinsics_to_optimize =
-    StringToOptimizeIntrinsicsType(FLAGS_intrinsics_to_optimize);
+      StringToOptimizeIntrinsicsType(FLAGS_intrinsics_to_optimize);
   options.reconstruct_largest_connected_component =
       FLAGS_reconstruct_largest_connected_component;
   options.only_calibrated_views = FLAGS_only_calibrated_views;
@@ -259,21 +259,18 @@ ReconstructionBuilderOptions SetReconstructionBuilderOptions() {
       FLAGS_extract_maximal_rigid_subgraph;
   reconstruction_estimator_options.filter_relative_translations_with_1dsfm =
       FLAGS_filter_relative_translations_with_1dsfm;
-  reconstruction_estimator_options
-      .rotation_filtering_max_difference_degrees =
+  reconstruction_estimator_options.rotation_filtering_max_difference_degrees =
       FLAGS_post_rotation_filtering_degrees;
   reconstruction_estimator_options.nonlinear_position_estimator_options
       .min_num_points_per_view =
       FLAGS_position_estimation_min_num_tracks_per_view;
 
   // Incremental SfM Options.
-  reconstruction_estimator_options
-      .absolute_pose_reprojection_error_threshold =
+  reconstruction_estimator_options.absolute_pose_reprojection_error_threshold =
       FLAGS_absolute_pose_reprojection_error_threshold;
   reconstruction_estimator_options.min_num_absolute_pose_inliers =
       FLAGS_min_num_absolute_pose_inliers;
-  reconstruction_estimator_options
-      .full_bundle_adjustment_growth_percent =
+  reconstruction_estimator_options.full_bundle_adjustment_growth_percent =
       FLAGS_full_bundle_adjustment_growth_percent;
   reconstruction_estimator_options.partial_bundle_adjustment_num_views =
       FLAGS_partial_bundle_adjustment_num_views;
@@ -298,8 +295,7 @@ ReconstructionBuilderOptions SetReconstructionBuilderOptions() {
 double time_to_read_matches = 0.0;
 
 bool TryAddMatchesToReconstructionBuilder(
-    ReconstructionBuilder* reconstruction_builder,
-    int last_image_n) {
+    ReconstructionBuilder* reconstruction_builder, int last_image_n) {
   // Load matches from file.
   std::vector<std::string> image_files;
   std::vector<theia::CameraIntrinsicsPrior> camera_intrinsics_prior;
@@ -308,14 +304,16 @@ bool TryAddMatchesToReconstructionBuilder(
   theia::Timer timer;
   timer.Reset();
   // Read in match file.
-  theia::ReadMatchesAndGeometry(FLAGS_matches_file,
-                                &image_files,
-                                &camera_intrinsics_prior,
-                                &image_matches);
+  theia::ReadMatchesAndGeometry(FLAGS_matches_file, &image_files,
+                                &camera_intrinsics_prior, &image_matches);
 
   time_to_read_matches += timer.ElapsedTimeInSeconds();
-  if(image_files.size() <= last_image_n)
+
+  // Simple but not very nice way to end iterations.
+  if (image_files.size() <= last_image_n) {
     return false;
+  }
+
   // Add all the views. When the intrinsics group id is invalid, the
   // reconstruction builder will assume that the view does not share its
   // intrinsics with any other views.
@@ -327,25 +325,34 @@ bool TryAddMatchesToReconstructionBuilder(
 
   std::sort(image_files.begin(), image_files.end());
 
-  //todo camera_intrinsics_prior !!!
+  // TODO(stoyanovd): Make dual sort of camera_intrinsics_prior.
   for (int i = (last_image_n == 2 ? 0 : last_image_n); i <= last_image_n; i++) {
     reconstruction_builder->AddImageWithCameraIntrinsicsPrior(
         image_files[i], camera_intrinsics_prior[i], intrinsics_group_id);
   }
 
-  // Add the matches.
-  for (const auto& match : image_matches) {
-    if (match.image1 <= image_files[last_image_n]
-        && match.image2 <= image_files[last_image_n])
-      CHECK(reconstruction_builder->AddTwoViewMatch(match.image1,
-                                                    match.image2,
-                                                    match));
+  // Add matches that belongs to current last View and any of previous Views.
+  if (last_image_n == 2) {
+    for (const auto& match : image_matches) {
+      if (match.image1 <= image_files[2] && match.image2 <= image_files[2])
+        CHECK(reconstruction_builder->AddTwoViewMatch(match.image1,
+                                                      match.image2, match));
+    }
+  } else {
+    for (const auto& match : image_matches) {
+      if ((match.image1 == image_files[last_image_n] ||
+           match.image2 == image_files[last_image_n]) &&
+          (match.image1 <= image_files[last_image_n] &&
+           match.image2 <= image_files[last_image_n]))
+        CHECK(reconstruction_builder->AddTwoViewMatch(match.image1,
+                                                      match.image2, match));
+    }
   }
 
   return true;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
   THEIA_GFLAGS_NAMESPACE::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
 
@@ -358,7 +365,7 @@ int main(int argc, char *argv[]) {
   ReconstructionBuilder reconstruction_builder(options);
 
   CHECK_GT(FLAGS_matches_file.size(), 0)
-    << "Must specify a filepath to output the reconstruction.";
+      << "Must specify a filepath to output the reconstruction.";
 
   theia::ViewId last_view_id = 2;
   while (true) {
@@ -368,21 +375,21 @@ int main(int argc, char *argv[]) {
 
     std::vector<Reconstruction*> reconstructions;
     CHECK(reconstruction_builder.BuildReconstruction(&reconstructions))
-    << "Could not create a reconstruction.";
+        << "Could not create a reconstruction.";
 
     for (int i = 0; i < reconstructions.size(); i++) {
-      const std::string output_file =
-          theia::StringPrintf("%s-frames_%03d-part_%03d",
-                              FLAGS_output_reconstruction.c_str(),
-                              last_view_id + 1,
-                              i);
+      const std::string output_file = theia::StringPrintf(
+          "%s-frames_%03d-part_%03d", FLAGS_output_reconstruction.c_str(),
+          last_view_id + 1, i);
       LOG(INFO) << "Writing reconstruction " << i << " to " << output_file;
       CHECK(theia::WriteReconstruction(*reconstructions[i], output_file))
-      << "Could not write reconstruction to file.";
-      LOG(INFO) << "Total time of mathces reading at the moment: "
-          << time_to_read_matches;
+          << "Could not write reconstruction to file.";
+      LOG(INFO) << "Total time of matches reading at the moment: "
+                << time_to_read_matches;
+    }
+    for (Reconstruction* r : reconstructions) {
+      delete r;
     }
     last_view_id += 1;
-    // TODO cleaning garbage
   }
 }

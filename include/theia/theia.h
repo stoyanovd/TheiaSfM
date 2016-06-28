@@ -168,6 +168,8 @@
 #include "theia/sfm/reconstruction_estimator_utils.h"
 #include "theia/sfm/set_camera_intrinsics_from_priors.h"
 #include "theia/sfm/similarity_transformation.h"
+#include "theia/sfm/stream_reconstruction_estimator.h"
+#include "theia/sfm/stream_reconstruction_estimator_utils.h"
 #include "theia/sfm/track.h"
 #include "theia/sfm/track_builder.h"
 #include "theia/sfm/transformation/align_point_clouds.h"

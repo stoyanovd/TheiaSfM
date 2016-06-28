@@ -166,6 +166,9 @@ ReconstructionEstimatorSummary StreamReconstructionEstimator::Estimate(
     if (!view->IsEstimated()) {
       unlocalized_views_.insert(view_id);
     }
+    else {
+      reconstructed_views_.push_back(view_id);
+    }
   }
 
   Timer total_timer;
@@ -241,7 +244,7 @@ ReconstructionEstimatorSummary StreamReconstructionEstimator::Estimate(
 
       // Step 5: Estimate new 3D points. and Step 6: Bundle adjustment.
       bool ba_success = false;
-      if (UnoptimizedGrowthPercentage() <
+      if (true || UnoptimizedGrowthPercentage() <
           options_.full_bundle_adjustment_growth_percent) {
         // Step 5: Perform triangulation on the most recent view.
         timer.Reset();
@@ -252,6 +255,7 @@ ReconstructionEstimatorSummary StreamReconstructionEstimator::Estimate(
         timer.Reset();
         ba_success = PartialBundleAdjustment();
         summary_.bundle_adjustment_time += timer.ElapsedTimeInSeconds();
+        LOG(INFO) << "Partial BA finish.";
       } else {
         // Step 5: Perform triangulation on all views.
         timer.Reset();
@@ -264,6 +268,7 @@ ReconstructionEstimatorSummary StreamReconstructionEstimator::Estimate(
         timer.Reset();
         ba_success = FullBundleAdjustment();
         summary_.bundle_adjustment_time += timer.ElapsedTimeInSeconds();
+        LOG(INFO) << "Full BA finish.";
       }
 
       SetUnderconstrainedAsUnestimated();

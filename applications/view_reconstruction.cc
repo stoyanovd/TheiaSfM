@@ -46,7 +46,7 @@
 #else  // FREEGLUT
 #include <GLUT/glut.h>
 #endif  // FREEGLUT
-#else  // __APPLE__
+#else   // __APPLE__
 #ifdef _WIN32
 #include <windows.h>
 #include <GL/glew.h>
@@ -59,15 +59,17 @@
 #endif  // _WIN32
 #endif  // __APPLE__
 
-DEFINE_string(reconstruction,
-              "",
-              "Reconstruction file to be viewed. If wildcard, you can move with n/N.");
+DEFINE_string(reconstruction, "",
+              "Reconstruction file to be viewed. "
+              "If wildcard, you can move with n/N.");
 
 // Containers for the data.
 std::vector<theia::Camera> cameras;
 std::vector<Eigen::Vector3d> world_points;
 std::vector<Eigen::Vector3f> point_colors;
 std::vector<int> num_views_for_track;
+
+std::unique_ptr<theia::Reconstruction> reconstruction;
 
 Eigen::Vector3d export_median;
 double export_scale;
@@ -206,15 +208,14 @@ void DrawCamera(const theia::Camera& camera) {
   glPopMatrix();
 }
 
-void DrawPoints(const float point_scale,
-                const float color_scale,
+void DrawPoints(const float point_scale, const float color_scale,
                 const float alpha_scale) {
   const float default_point_size = point_size;
   const float default_alpha_scale = anti_aliasing_blend;
 
   // TODO(cmsweeney): Render points with the actual 3D point color! This would
   // require Theia to save the colors during feature extraction.
-  //const Eigen::Vector3f default_color(0.05, 0.05, 0.05);
+  // const Eigen::Vector3f default_color(0.05, 0.05, 0.05);
 
   // Enable anti-aliasing for round points and alpha blending that helps make
   // points look nicer.
@@ -232,7 +233,6 @@ void DrawPoints(const float point_scale,
   point_size_coords[2] = 0.0f;
   glPointParameterfv(GL_POINT_DISTANCE_ATTENUATION, point_size_coords);
 
-
   glPointSize(point_scale * default_point_size);
   glBegin(GL_POINTS);
   for (int i = 0; i < world_points.size(); i++) {
@@ -240,10 +240,8 @@ void DrawPoints(const float point_scale,
       continue;
     }
     const Eigen::Vector3f color = point_colors[i] / 255.0;
-    glColor4f(color_scale * color[0],
-              color_scale * color[1],
-              color_scale * color[2],
-              alpha_scale * default_alpha_scale);
+    glColor4f(color_scale * color[0], color_scale * color[1],
+              color_scale * color[2], alpha_scale * default_alpha_scale);
 
     glVertex3d(world_points[i].x(), world_points[i].y(), world_points[i].z());
   }
@@ -366,27 +364,24 @@ void MouseMove(int x, int y) {
 }
 
 void ChangeWindowsTitle() {
-  glutSetWindowTitle(("Theia Reconstruction Viewer: "
-      + filepaths[file_index]).c_str());
+  glutSetWindowTitle(
+      ("Theia Reconstruction Viewer: " + filepaths[file_index]).c_str());
 }
 
 void AddReconstructionToVisualization(bool first_time) {
   // Output as a binary file.
-  std::unique_ptr<theia::Reconstruction> reconstruction(
-      new theia::Reconstruction());
+  reconstruction.reset(new theia::Reconstruction());
+
   CHECK(ReadReconstruction(filepaths[file_index], reconstruction.get()))
-  << "Could not read reconstruction file: "<< filepaths[file_index];
+      << "Could not read reconstruction file: " << filepaths[file_index];
 
   // Centers the reconstruction either based on the absolute deviation
   // of its 3D points or similar to previous reconstruction.
   if (first_time) {
-    reconstruction->Normalize(export_median,
-                              export_scale,
+    reconstruction->Normalize(export_median, export_scale,
                               export_rotation_for_dominant_plane);
-  }
-  else {
-    reconstruction->TransformToForeign(export_median,
-                                       export_scale,
+  } else {
+    reconstruction->TransformToForeign(export_median, export_scale,
                                        export_rotation_for_dominant_plane);
   }
   cameras.clear();
@@ -407,6 +402,18 @@ void AddReconstructionToVisualization(bool first_time) {
   world_points.reserve(reconstruction->NumTracks());
   point_colors.reserve(reconstruction->NumTracks());
   num_views_for_track.reserve(reconstruction->NumTracks());
+
+  // At the moment (70, 40) is for debug purposes.
+  auto tracks_stats = theia::NumTracksLargeDiff(*reconstruction.get(), 70, 40);
+
+  LOG(INFO) << "After reconstruction estimation:";
+  LOG(INFO) << "Starting from tracks observed from ViewId " << 70 << " have "
+            << std::get<0>(tracks_stats) << " tracks totally.";
+  LOG(INFO) << "Among them " << std::get<1>(tracks_stats)
+            << " has (max - min) view ids more than " << 40 << ".";
+  LOG(INFO) << "And " << std::get<2>(tracks_stats)
+            << " large diff tracks are estimated.";
+
   for (const theia::TrackId track_id : reconstruction->TrackIds()) {
     const auto* track = reconstruction->Track(track_id);
     if (track == nullptr || !track->IsEstimated()) {
@@ -416,9 +423,8 @@ void AddReconstructionToVisualization(bool first_time) {
     point_colors.emplace_back(track->Color().cast<float>());
     num_views_for_track.emplace_back(track->NumViews());
   }
-  reconstruction.release();
-  if (!first_time)
-    ChangeWindowsTitle();
+  //  reconstruction.release();
+  if (!first_time) ChangeWindowsTitle();
 }
 
 void Keyboard(unsigned char key, int x, int y) {
@@ -491,7 +497,7 @@ int main(int argc, char* argv[]) {
 
   theia::GetFilepathsFromWildcard(FLAGS_reconstruction, &filepaths);
 
-  //TODO(stoyanovd): Think about natural order of filepaths.
+  // TODO(stoyanovd): Think about natural order of filepaths.
   std::sort(filepaths.begin(), filepaths.end());
 
   // At first time we must fill transformation parameteres.

@@ -38,6 +38,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <src/theia/util/timer.h>
 
 #include "theia/sfm/camera_intrinsics_prior.h"
 #include "theia/sfm/reconstruction.h"
@@ -47,6 +48,8 @@
 #include "theia/sfm/view.h"
 #include "theia/sfm/view_graph/view_graph.h"
 #include "theia/util/filesystem.h"
+#include "theia/sfm/stream_reconstruction_estimator.h"
+#include "theia/sfm/stream_reconstruction_estimator_utils.h"
 
 namespace theia {
 
@@ -159,8 +162,7 @@ ReconstructionBuilder::ReconstructionBuilder(
   feam_options.num_threads = options_.num_threads;
   feam_options.only_calibrated_views = options_.only_calibrated_views;
   feam_options.num_threads = options_.num_threads;
-  feam_options.descriptor_extractor_type =
-      options_.descriptor_type;
+  feam_options.descriptor_extractor_type = options_.descriptor_type;
   feam_options.feature_density = options_.feature_density;
   feam_options.min_num_inlier_matches = options_.min_num_inlier_matches;
   feam_options.matching_strategy = options_.matching_strategy;
@@ -182,9 +184,7 @@ bool ReconstructionBuilder::AddImage(
     const std::string& image_filepath,
     const CameraIntrinsicsGroupId camera_intrinsics_group) {
   image_filepaths_.emplace_back(image_filepath);
-  if (!AddViewToReconstruction(image_filepath,
-                               NULL,
-                               camera_intrinsics_group,
+  if (!AddViewToReconstruction(image_filepath, NULL, camera_intrinsics_group,
                                reconstruction_.get())) {
     return false;
   }
@@ -203,8 +203,7 @@ bool ReconstructionBuilder::AddImageWithCameraIntrinsicsPrior(
     const CameraIntrinsicsPrior& camera_intrinsics_prior,
     const CameraIntrinsicsGroupId camera_intrinsics_group) {
   image_filepaths_.emplace_back(image_filepath);
-  if (!AddViewToReconstruction(image_filepath,
-                               &camera_intrinsics_prior,
+  if (!AddViewToReconstruction(image_filepath, &camera_intrinsics_prior,
                                camera_intrinsics_group,
                                reconstruction_.get())) {
     return false;
@@ -269,10 +268,8 @@ bool ReconstructionBuilder::ExtractAndMatchFeatures() {
   // Write the matches to a file if it exists.
   if (options_.output_matches_file.length() > 0) {
     LOG(INFO) << "Writing matches to file: " << options_.output_matches_file;
-    CHECK(WriteMatchesAndGeometry(options_.output_matches_file,
-                                  image_filenames,
-                                  camera_intrinsics_priors,
-                                  matches))
+    CHECK(WriteMatchesAndGeometry(options_.output_matches_file, image_filenames,
+                                  camera_intrinsics_priors, matches))
         << "Could not write the matches to " << options_.output_matches_file;
   }
 
@@ -330,12 +327,26 @@ bool ReconstructionBuilder::BuildReconstruction(
                                           "reconstruction.";
 
   // Build tracks if they were not explicitly specified.
+  Timer timer;
+  timer.Reset();
   if (reconstruction_->NumTracks() == 0) {
     track_builder_->BuildTracks(reconstruction_.get());
-  } else {
-    track_builder_->AddNewTracks(reconstruction_.get(),
-                                 reconstruction_.get()->ViewIds().back());
+  } else if (options_.reconstruction_estimator_options
+                 .reconstruction_estimator_type ==
+             ReconstructionEstimatorType::STREAM) {
+    track_builder_->AddNewTracks(reconstruction_.get());
   }
+  LOG(INFO) << "Tracks construction: " << timer.ElapsedTimeInSeconds();
+  auto tracks_stats = NumTracksLargeDiff(*reconstruction_.get(), 70, 40);
+
+  LOG(INFO) << "After tracks construction:";
+  LOG(INFO) << "Starting from tracks observed from ViewId " << 70 << " have "
+            << std::get<0>(tracks_stats) << " tracks totally.";
+  LOG(INFO) << "Among them " << std::get<1>(tracks_stats)
+            << " has (max - min) view ids more than " << 40 << ".";
+  LOG(INFO) << "And " << std::get<2>(tracks_stats)
+            << " large diff tracks are estimated.";
+
   // Remove uncalibrated views from the reconstruction and view graph.
   if (options_.only_calibrated_views) {
     LOG(INFO) << "Removing uncalibrated views.";
@@ -359,24 +370,45 @@ bool ReconstructionBuilder::BuildReconstruction(
       return reconstructions->size() > 0;
     }
 
-    LOG(INFO)
-        << "\nReconstruction estimation statistics: "
-        << "\n\tNum estimated views = " << summary.estimated_views.size()
-        << "\n\tNum input views = " << reconstruction_->NumViews()
-        << "\n\tNum estimated tracks = " << summary.estimated_tracks.size()
-        << "\n\tNum input tracks = " << reconstruction_->NumTracks()
-        << "\n\tPose estimation time = " << summary.pose_estimation_time
-        << "\n\tTriangulation time = " << summary.triangulation_time
-        << "\n\tBundle Adjustment time = " << summary.bundle_adjustment_time
-        << "\n\tTotal time = " << summary.total_time
-        << "\n\n" << summary.message;
+    LOG(INFO) << "\nReconstruction estimation statistics: "
+              << "\n\tNum estimated views = " << summary.estimated_views.size()
+              << "\n\tNum input views = " << reconstruction_->NumViews()
+              << "\n\tNum estimated tracks = "
+              << summary.estimated_tracks.size()
+              << "\n\tNum input tracks = " << reconstruction_->NumTracks()
+              << "\n\tPose estimation time = " << summary.pose_estimation_time
+              << "\n\tTriangulation time = " << summary.triangulation_time
+              << "\n\tBundle Adjustment time = "
+              << summary.bundle_adjustment_time
+              << "\n\tTotal time = " << summary.total_time << "\n\n"
+              << summary.message;
+
+    // Separate estimated part of reconstruction from working part and add it to
+    // answer.
+    reconstructions->emplace_back(
+        CreateEstimatedSubreconstruction(*reconstruction_));
+
+    // At the moment (70, 40) is for debug purposes.
+    tracks_stats = NumTracksLargeDiff(*reconstruction_.get(), 70, 40);
+
+    LOG(INFO) << "After reconstruction estimation:";
+    LOG(INFO) << "Starting from tracks observed from ViewId " << 70 << " have "
+              << std::get<0>(tracks_stats) << " tracks totally.";
+    LOG(INFO) << "Among them " << std::get<1>(tracks_stats)
+              << " has (max - min) view ids more than " << 40 << ".";
+    LOG(INFO) << "And " << std::get<2>(tracks_stats)
+              << " large diff tracks are estimated.";
+
+    // In case of stream reconstruction tracks and views must remain in
+    // reconstruction.
+    if (options_.reconstruction_estimator_options
+            .reconstruction_estimator_type ==
+        ReconstructionEstimatorType::STREAM)
+      return true;
 
     // Remove estimated views and tracks and attempt to create a reconstruction
     // from the remaining unestimated parts.
-    reconstructions->emplace_back(
-        CreateEstimatedSubreconstruction(*reconstruction_));
-//    RemoveEstimatedViewsAndTracks(reconstruction_.get(), view_graph_.get());
-    return true;
+    RemoveEstimatedViewsAndTracks(reconstruction_.get(), view_graph_.get());
 
     // Exit after the first reconstruction estimation if only the single largest
     // reconstruction is desired.
@@ -393,8 +425,7 @@ bool ReconstructionBuilder::BuildReconstruction(
 }
 
 void ReconstructionBuilder::AddMatchToViewGraph(
-    const ViewId view_id1,
-    const ViewId view_id2,
+    const ViewId view_id1, const ViewId view_id2,
     const ImagePairMatch& image_matches) {
   // Add the view pair to the reconstruction. The view graph requires the two
   // view info
@@ -412,8 +443,8 @@ void ReconstructionBuilder::AddTracksForMatch(const ViewId view_id1,
                                               const ViewId view_id2,
                                               const ImagePairMatch& matches) {
   for (const auto& match : matches.correspondences) {
-    track_builder_->AddFeatureCorrespondence(view_id1, match.feature1,
-                                             view_id2, match.feature2);
+    track_builder_->AddFeatureCorrespondence(view_id1, match.feature1, view_id2,
+                                             match.feature2);
   }
 }
 

@@ -49,6 +49,7 @@
 #include "theia/sfm/track.h"
 #include "theia/sfm/types.h"
 #include "theia/sfm/view.h"
+#include "theia/sfm/feature.h"
 
 namespace theia {
 
@@ -136,13 +137,14 @@ class Reconstruction {
   void Normalize();
   void Normalize(Eigen::Vector3d &export_median, double &export_scale,
                  Eigen::Matrix3d &export_rotation);
-  void TransformToForeign(Eigen::Vector3d &export_median, double &export_scale,
+  void TransformToForeign(Eigen::Vector3d &export_median, double & export_scale,
                           Eigen::Matrix3d& export_rotation);
-  void PutTrackToMap(TrackId trackId,
-                     const std::vector<std::pair<ViewId,
-                                                 Feature> >& sorted_track);
-  TrackId FindTrackInMap
-      (const std::vector<std::pair<ViewId, Feature> >& sorted_track);
+
+  void PutTrackToMap
+      (TrackId trackId, const std::vector<std::pair<ViewId, Feature>>& track);
+
+  std::unordered_set<TrackId> FindTrackInMap(
+      const std::vector<std::pair<ViewId, Feature> >& features);
 
  private:
   // Templated method for disk I/O with cereal. This method tells cereal which
@@ -172,9 +174,10 @@ class Reconstruction {
   std::unordered_map<CameraIntrinsicsGroupId, std::unordered_set<ViewId> >
       camera_intrinsics_groups_;
 
-  std::unordered_map<std::string, TrackId> feature_set_to_track_;
-  std::unordered_map<TrackId, std::string> track_to_feature_set;
-  std::unordered_set<std::string> outlier_feature_sets_;
+  std::unordered_map<std::pair<ViewId, Feature>, TrackId> feature_set_to_track_;
+//  std::unordered_map<TrackId, std::string> track_to_feature_set;
+//  // not in use at the moment
+//  std::unordered_set<std::string> outlier_feature_sets_;
 };
 
 }  // namespace theia

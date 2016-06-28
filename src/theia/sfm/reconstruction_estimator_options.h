@@ -46,7 +46,8 @@ namespace theia {
 // is less scalable but often more robust.
 enum class ReconstructionEstimatorType {
   GLOBAL = 0,
-  INCREMENTAL = 1
+  INCREMENTAL = 1,
+  STREAM = 2
 };
 
 // The recommended type of rotations solver is the Robust L1-L2 method. This

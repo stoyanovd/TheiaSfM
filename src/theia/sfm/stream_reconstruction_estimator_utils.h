@@ -32,33 +32,29 @@
 // Please contact the author of this library if you have any questions.
 // Author: Chris Sweeney (cmsweeney@cs.ucsb.edu)
 
+#ifndef THEIA_SFM_STREAM_RECONSTRUCTION_ESTIMATOR_UTILS_H_
+#define THEIA_SFM_STREAM_RECONSTRUCTION_ESTIMATOR_UTILS_H_
+
+#include <Eigen/Core>
+#include <unordered_map>
+
+#include "theia/solvers/sample_consensus_estimator.h"
+#include "theia/sfm/bundle_adjustment/bundle_adjustment.h"
+#include "theia/sfm/reconstruction.h"
 #include "theia/sfm/reconstruction_estimator.h"
-
-#include <glog/logging.h>
-
-#include "theia/sfm/incremental_reconstruction_estimator.h"
-#include "theia/sfm/global_reconstruction_estimator.h"
-#include "theia/sfm/stream_reconstruction_estimator.h"
-#include "theia/sfm/reconstruction_estimator_options.h"
+#include "theia/sfm/global_pose_estimation/nonlinear_position_estimator.h"
+#include "theia/sfm/twoview_info.h"
+#include "theia/sfm/view_graph/view_graph.h"
 
 namespace theia {
 
-ReconstructionEstimator* ReconstructionEstimator::Create(
-    const ReconstructionEstimatorOptions& options) {
-  switch (options.reconstruction_estimator_type) {
-    case ReconstructionEstimatorType::GLOBAL:
-      return new GlobalReconstructionEstimator(options);
-      break;
-    case ReconstructionEstimatorType::INCREMENTAL:
-      return new IncrementalReconstructionEstimator(options);
-      break;
-    case ReconstructionEstimatorType::STREAM:
-      return new StreamReconstructionEstimator(options);
-      break;
-    default:
-      LOG(FATAL) << "Invalid reconstruction estimator specified.";
-  }
-  return nullptr;
-}
+// Returns tuple, where first is the number of tracks, observed from
+// views starting from start_view_id. Part of them, that are observed from
+// ViewIds that differ more than diff_ids is second. Third is subset of second
+// that is estimated.
+std::tuple<int, int, int> NumTracksLargeDiff(
+    const Reconstruction& reconstruction, ViewId start_view_id, int diff_ids);
 
 }  // namespace theia
+
+#endif  // THEIA_SFM_STREAM_RECONSTRUCTION_ESTIMATOR_UTILS_H_

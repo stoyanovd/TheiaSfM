@@ -138,6 +138,7 @@ set(THEIA_SRC
   sfm/reconstruction_estimator_utils.cc
   sfm/set_camera_intrinsics_from_priors.cc
   sfm/stream_reconstruction_estimator.cc
+  sfm/stream_reconstruction_estimator_utils.cc
   sfm/track.cc
   sfm/track_builder.cc
   sfm/transformation/align_point_clouds.cc

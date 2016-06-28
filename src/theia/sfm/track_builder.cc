@@ -119,16 +119,10 @@ void TrackBuilder::BuildTracks(Reconstruction* reconstruction) {
       track.emplace_back(feature_to_add);
     }
 
-    std::sort(track.begin(),
-              track.end(),
-              [](const std::pair<ViewId, Feature>& a,
-                 const std::pair<ViewId, Feature>& b) {
-                return a.first < b.first;
-              });
-
     TrackId added_track_id = reconstruction->AddTrack(track);
-    CHECK_NE(added_track_id, kInvalidTrackId)
-      << "Could not build tracks.";
+    CHECK_NE(added_track_id, kInvalidTrackId) << "Could not build tracks.";
+
+    // Update feature to track map.
     reconstruction->PutTrackToMap(added_track_id, track);
   }
 
@@ -140,10 +134,12 @@ void TrackBuilder::BuildTracks(Reconstruction* reconstruction) {
                              "enough observations.";
 }
 
-void TrackBuilder::AddNewTracks(Reconstruction* reconstruction, ViewId last_view_id) {
+void TrackBuilder::AddNewTracks(Reconstruction* reconstruction) {
   CHECK_NOTNULL(reconstruction);
-//  CHECK_EQ(reconstruction->NumTracks(), 0);
 
+  std::vector<ViewId> reconstruction_view_ids = reconstruction->ViewIds();
+  ViewId last_view_id = *std::max_element(reconstruction_view_ids.begin(),
+                                          reconstruction_view_ids.end());
 
   // Build a reverse map mapping feature ids to ImageNameFeaturePairs.
   std::unordered_map<uint64_t, const std::pair<ViewId, Feature>*> id_to_feature;
@@ -161,7 +157,9 @@ void TrackBuilder::AddNewTracks(Reconstruction* reconstruction, ViewId last_view
   int num_inconsistent_features = 0;
   int num_new_tracks = 0;
   int num_updated_tracks = 0;
-  int num_without_last = 0;
+  int num_with_last = 0;
+  int num_sharing_tracks = 0;
+
   for (const auto& component : components) {
     // Skip singleton tracks.
     if (component.second.size() < min_track_length_) {
@@ -188,46 +186,75 @@ void TrackBuilder::AddNewTracks(Reconstruction* reconstruction, ViewId last_view
       track.emplace_back(feature_to_add);
     }
 
-    if (!has_last_view_id)
-    {
-      num_without_last++;
-//      continue;
+    if (has_last_view_id) {
+      num_with_last++;
     }
 
-    std::sort(track.begin(),
-              track.end(),
-              [](const std::pair<ViewId, Feature>& a,
-                 const std::pair<ViewId, Feature>& b) {
-                return a.first < b.first;
-              });
-    // out;ier
+    std::unordered_set<TrackId> track_ids =
+        reconstruction->FindTrackInMap(track);
 
-    TrackId already_track_id = reconstruction->FindTrackInMap(track);
-
-    if (already_track_id == kInvalidTrackId) {
-      TrackId added_track_id = reconstruction->AddTrack(track);
-      CHECK_NE(added_track_id, kInvalidTrackId)
-        << "Could not build tracks.";
-      reconstruction->PutTrackToMap(added_track_id, track);
+    TrackId leader_track_id;
+    if (track_ids.empty()) {
+      // No other tracks have common features. Add new track.
+      leader_track_id = reconstruction->AddTrack(track);
+      CHECK_NE(leader_track_id, kInvalidTrackId) << "Could not build tracks.";
       num_new_tracks++;
-    }
-    else {
-      reconstruction->UpdateTrack(already_track_id, track);
+    } else if (track_ids.size() == 1) {
+      // Features from this tracks are found only in one track.
+      // Update it to have all features certainly.
+      leader_track_id = *track_ids.begin();
+      reconstruction->UpdateTrack(leader_track_id, track);
       num_updated_tracks++;
+    } else {
+      // Have several tracks that share these features.
+      // They must be united.
+      num_sharing_tracks += 1;
+      leader_track_id = reconstruction->AddTrack(track);
+      CHECK_NE(leader_track_id, kInvalidTrackId)
+          << "Track can not been initialized.";
+
+      Track* leader_track = reconstruction->MutableTrack(leader_track_id);
+
+      // If there is a track that was estimated, set new track to estimated.
+      // TODO(stoyanovd): Choose point initialization in old or recent tracks?
+      for (auto track_id : track_ids) {
+        CHECK_NE(track_id, kInvalidTrackId) << "Not-initialized Track !!!";
+
+        const Track* old_track = reconstruction->Track(track_id);
+        if (old_track == nullptr) {
+          continue;
+        }
+        if (old_track->IsEstimated()) {
+          *leader_track->MutablePoint() = old_track->Point();
+          leader_track->SetEstimated(true);
+          break;
+        }
+      }
+
+      // Remove outdated tracks.
+      for (auto track_id : track_ids) {
+        reconstruction->RemoveTrack(track_id);
+        // TODO(stoyanovd): Clean feature_set_to_track accordingly.
+      }
     }
+
+    // Add or rewrite features in track map.
+    reconstruction->PutTrackToMap(leader_track_id, track);
   }
 
   VLOG(1)
-  << reconstruction->NumTracks() << " totally in reconstruction. "
+      << reconstruction->NumTracks() << " totally in reconstruction. "
       << num_inconsistent_features
       << " features were dropped because they formed inconsistent tracks, and "
       << num_small_tracks << " features were dropped because they did not have "
-      "enough observations.";
+                             "enough observations.";
   VLOG(1) << "Totally " << num_new_tracks + num_updated_tracks << " with view "
-      << last_view_id << " was processed.";
-  VLOG(1)
-  << "New: " << num_new_tracks << ". Updated: " << num_updated_tracks << ".";
-  VLOG(1) << "Tracks without last: " << num_without_last;
+          << last_view_id << " was processed.";
+  VLOG(1) << "New: " << num_new_tracks
+          << " and updated: " << num_updated_tracks;
+  VLOG(1) << "Tracks that observed from last View: " << num_with_last;
+  VLOG(1) << "Tracks that united several old tracks with help of last View: "
+          << num_sharing_tracks;
 }
 
 uint64_t TrackBuilder::FindOrInsert(
@@ -246,7 +273,7 @@ uint64_t TrackBuilder::FindOrInsert(
   // Increment the number of features.
   ++num_features_;
 
-  return new_feature_id;;
+  return new_feature_id;
 }
 
 }  // namespace theia
